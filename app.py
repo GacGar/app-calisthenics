@@ -10,7 +10,7 @@ import json
 st.set_page_config(page_title="Diario Calisthenics", page_icon="💪", layout="wide")
 
 # --- MAGIA DEL CLOUD: CONNESSIONE A GOOGLE SHEETS ---
-NOME_FOGLIO_GOOGLE = "Diario_Calisthenics" # ⚠️ DEVE CHIAMARSI ESATTAMENTE COSÌ SU DRIVE
+NOME_FOGLIO_GOOGLE = "Allenamenti_Calisthenics" # ⚠️ DEVE CHIAMARSI ESATTAMENTE COSÌ SU DRIVE
 
 @st.cache_resource(ttl=60) # Memorizza la connessione per rendere l'app velocissima
 def init_connection():
