@@ -2,9 +2,40 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 from datetime import datetime
+import gspread
+from google.oauth2.service_account import Credentials
+import json
 
 # Configurazione della pagina
 st.set_page_config(page_title="Diario Calisthenics", page_icon="💪", layout="wide")
+
+# --- MAGIA DEL CLOUD: CONNESSIONE A GOOGLE SHEETS ---
+NOME_FOGLIO_GOOGLE = "Allenamenti_Calisthenics" # ⚠️ DEVE CHIAMARSI ESATTAMENTE COSÌ SU DRIVE
+
+@st.cache_resource(ttl=60) # Memorizza la connessione per rendere l'app velocissima
+def init_connection():
+    # Legge i segreti in modo blindato da Streamlit Cloud
+    creds_dict = json.loads(st.secrets["GOOGLE_CREDENTIALS_JSON"])
+    SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+    return gspread.authorize(creds)
+
+def get_data():
+    client = init_connection()
+    sheet = client.open(NOME_FOGLIO_GOOGLE).sheet1
+    dati = sheet.get_all_records()
+    df = pd.DataFrame(dati)
+    if df.empty:
+        colonne = ['Data', 'PT', 'Lezioni_Rimaste', 'Metodo', 'Esercizio', 'Attrezzo', 'Serie', 'Rep_Target', 'Carico_kg', 'Tipo_Var', 'Sec_Var', 'Tipo_Var_2', 'Sec_Var_2', 'Rest_sec', 'Tempo_Esec_sec', 'Resoconto_Auto', 'Note_Esecuzione']
+        return pd.DataFrame(columns=colonne)
+    return df
+
+def append_data(df_nuovo):
+    client = init_connection()
+    sheet = client.open(NOME_FOGLIO_GOOGLE).sheet1
+    df_nuovo = df_nuovo.fillna("") # Evita problemi con le celle vuote di pandas
+    sheet.append_rows(df_nuovo.values.tolist())
+
 
 # --- INIZIALIZZAZIONE DELLA MEMORIA (CARRELLO E NAVIGAZIONE) ---
 if 'carrello' not in st.session_state:
@@ -26,7 +57,7 @@ tab_inserimento, tab_diario, tab_analisi = st.tabs(["✏️ Inserimento Dati", "
 # ==========================================
 with tab_inserimento:
     if st.session_state.salvato_con_successo:
-        st.success("✅ Allenamento salvato in Excel con successo!")
+        st.success("✅ Allenamento salvato in Cloud con successo!")
         st.session_state.salvato_con_successo = False 
 
     carrello_pieno = len(st.session_state.carrello) > 0
@@ -36,7 +67,7 @@ with tab_inserimento:
     data_corrente_selezionata = st.session_state.get('data_input', datetime.today().date())
 
     try:
-        df_esistente = pd.read_excel('dati.xlsx')
+        df_esistente = get_data() # LEGGE DA GOOGLE SHEETS
         if 'Lezioni_Rimaste' not in df_esistente.columns:
             df_esistente['Lezioni_Rimaste'] = 0
             
@@ -270,25 +301,18 @@ with tab_inserimento:
                     st.rerun()
         
         if len(st.session_state.carrello) > 0:
-            st.warning("⚠️ L'allenamento non è ancora nel database. Controlla il riepilogo e conferma!")
+            st.warning("⚠️ L'allenamento è pronto. Controlla il riepilogo e invia al Cloud!")
             col_salva, col_svuota = st.columns(2)
             with col_salva:
-                if st.button("💾 Conferma e Salva nel Database", type="primary"):
+                if st.button("☁️ Salva su Google Sheets", type="primary"):
                     try:
-                        df_esistente = pd.read_excel('dati.xlsx')
                         df_anteprima = pd.DataFrame(st.session_state.carrello)
-                        df_aggiornato = pd.concat([df_esistente, df_anteprima], ignore_index=True)
-                        
-                        df_aggiornato['Data_Temp'] = pd.to_datetime(df_aggiornato['Data'], format='%d/%m/%Y')
-                        df_aggiornato = df_aggiornato.sort_values(by='Data_Temp', kind='mergesort')
-                        df_aggiornato = df_aggiornato.drop(columns=['Data_Temp']).reset_index(drop=True)
-                        
-                        df_aggiornato.to_excel('dati.xlsx', index=False)
+                        append_data(df_anteprima) # SCRIVE ONLINE!
                         st.session_state.carrello = []
                         st.session_state.salvato_con_successo = True
                         st.rerun()
                     except Exception as e:
-                        st.error(f"⚠️ Ops! C'è stato un problema col file Excel: {e}")
+                        st.error(f"⚠️ Ops! Errore di connessione a Google Sheets: {e}")
             with col_svuota:
                 if st.button("🗑️ Svuota tutto il Carrello"):
                     st.session_state.carrello = []
@@ -300,7 +324,7 @@ with tab_inserimento:
 with tab_diario:
     
     try:
-        df_diario = pd.read_excel('dati.xlsx')
+        df_diario = get_data() # LEGGE DA GOOGLE SHEETS
         if df_diario.empty:
             st.info("Nessun allenamento trovato. Inizia ad inserire i dati!")
         else:
@@ -446,10 +470,8 @@ with tab_diario:
                                 unsafe_allow_html=True
                             )
                             
-    except FileNotFoundError:
-        st.warning("File dati.xlsx non ancora creato. Salva il tuo primo allenamento!")
     except Exception as e:
-        st.error(f"⚠️ Errore durante la lettura del diario: {e}")
+        st.error(f"⚠️ Errore di connessione a Google Sheets: {e}")
 
 # ==========================================
 # SCHEDA 3: ANALISI PROGRESSI
@@ -458,7 +480,7 @@ with tab_analisi:
     st.subheader("📈 Analisi Progressi")
     
     try:
-        df_analisi = pd.read_excel('dati.xlsx')
+        df_analisi = get_data() # LEGGE DA GOOGLE SHEETS
         if df_analisi.empty:
             st.info("Inizia a registrare allenamenti per sbloccare l'analisi dei dati!")
         else:
@@ -642,7 +664,6 @@ with tab_analisi:
                     def get_x_title(chart_name):
                         return 'Data Allenamento' if grafici_attivi[-1] == chart_name else ''
 
-                    # GRAFICI ALTAIR SENZA .interactive() PER EVITARE ZOOM MOLESTI SU TOUCH
                     if show_carico:
                         st.markdown("**⚖️ Andamento Carico / Zavorra (kg)**")
                         chart_carico = alt.Chart(df_per_grafici).mark_line(point=True, color='#ff4b4b', size=3).encode(
@@ -682,7 +703,5 @@ with tab_analisi:
                 else:
                     st.warning("Hai tolto la spunta a tutti gli allenamenti, non c'è nulla da disegnare sui grafici!")
 
-    except FileNotFoundError:
-        st.warning("Nessun dato trovato.")
     except Exception as e:
-        st.error(f"⚠️ Errore durante l'analisi: {e}")
+        st.error(f"⚠️ Errore di connessione a Google Sheets: {e}")
