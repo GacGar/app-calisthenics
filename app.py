@@ -10,7 +10,7 @@ import json
 st.set_page_config(page_title="Diario Calisthenics", page_icon="💪", layout="wide")
 
 # --- MAGIA DEL CLOUD: CONNESSIONE A GOOGLE SHEETS ---
-NOME_FOGLIO_GOOGLE = "Allenamenti_Calisthenics" # ⚠️ DEVE CHIAMARSI ESATTAMENTE COSÌ SU DRIVE
+NOME_FOGLIO_GOOGLE = "Diario_Calisthenics" # ⚠️ DEVE CHIAMARSI ESATTAMENTE COSÌ SU DRIVE
 
 @st.cache_resource(ttl=60) # Memorizza la connessione per rendere l'app velocissima
 def init_connection():
@@ -328,6 +328,9 @@ with tab_diario:
         if df_diario.empty:
             st.info("Nessun allenamento trovato. Inizia ad inserire i dati!")
         else:
+            # 1. SALVIAMO L'ID ORIGINALE PRIMA DI FARE QUALSIASI COSA
+            df_diario['ID_Riga'] = df_diario.index
+            
             df_diario['Carico_kg'] = pd.to_numeric(df_diario['Carico_kg'], errors='coerce').fillna(0)
             df_diario['Rep_Target'] = pd.to_numeric(df_diario['Rep_Target'], errors='coerce').fillna(0)
             df_diario['Data_Ord'] = pd.to_datetime(df_diario['Data'], format='%d/%m/%Y')
@@ -445,8 +448,11 @@ with tab_diario:
                 st.markdown("---")
                 st.markdown("##### 📝 Dettaglio Sessioni")
                 
-                df_periodo = df_periodo.sort_values(by='Data_Ord', ascending=False)
-                giorni_allenamento_periodo = df_periodo['Data'].unique()
+                # DOPPIO ORDINAMENTO: Giorni Nuovi in alto, ma Esercizi in ordine cronologico (dal primo inserito all'ultimo)
+                df_periodo = df_periodo.sort_values(by=['Data_Ord', 'ID_Riga'], ascending=[False, True])
+                
+                # Essendo la colonna Date non più unica per l'ordine, estraiamo i giorni in modo univoco mantenendo l'ordine discendente
+                giorni_allenamento_periodo = df_periodo['Data'].drop_duplicates().tolist()
                 
                 for giorno in giorni_allenamento_periodo:
                     esercizi_del_giorno = df_periodo[df_periodo['Data'] == giorno]
@@ -484,6 +490,9 @@ with tab_analisi:
         if df_analisi.empty:
             st.info("Inizia a registrare allenamenti per sbloccare l'analisi dei dati!")
         else:
+            # SALVIAMO L'ID ORIGINALE ANCHE QUI PER SICUREZZA
+            df_analisi['ID_Riga'] = df_analisi.index
+            
             df_analisi['Carico_kg'] = pd.to_numeric(df_analisi['Carico_kg'], errors='coerce').fillna(0)
             df_analisi['Rep_Target'] = pd.to_numeric(df_analisi['Rep_Target'], errors='coerce').fillna(0)
             df_analisi['Serie'] = pd.to_numeric(df_analisi['Serie'], errors='coerce').fillna(0)
@@ -495,7 +504,9 @@ with tab_analisi:
             )
 
             df_analisi['Data_Ord'] = pd.to_datetime(df_analisi['Data'], format='%d/%m/%Y')
-            df_analisi = df_analisi.sort_values(by='Data_Ord', ascending=True)
+            
+            # Doppio ordinamento: Data crescente per i grafici temporali, e a parità di data ordine di inserimento
+            df_analisi = df_analisi.sort_values(by=['Data_Ord', 'ID_Riga'], ascending=[True, True])
 
             min_date = df_analisi['Data_Ord'].min().date()
             max_date = df_analisi['Data_Ord'].max().date()
