@@ -10,11 +10,10 @@ import json
 st.set_page_config(page_title="Diario Calisthenics", page_icon="💪", layout="wide")
 
 # --- MAGIA DEL CLOUD: CONNESSIONE A GOOGLE SHEETS ---
-NOME_FOGLIO_GOOGLE = "Allenamenti_Calisthenics" # ⚠️ DEVE CHIAMARSI ESATTAMENTE COSÌ SU DRIVE
+NOME_FOGLIO_GOOGLE = "Allenamenti_Calisthenics"
 
-@st.cache_resource(ttl=60) # Memorizza la connessione per rendere l'app velocissima
+@st.cache_resource(ttl=60)
 def init_connection():
-    # Legge i segreti in modo blindato da Streamlit Cloud
     creds_dict = json.loads(st.secrets["GOOGLE_CREDENTIALS_JSON"])
     SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
@@ -33,11 +32,10 @@ def get_data():
 def append_data(df_nuovo):
     client = init_connection()
     sheet = client.open(NOME_FOGLIO_GOOGLE).sheet1
-    df_nuovo = df_nuovo.fillna("") # Evita problemi con le celle vuote di pandas
+    df_nuovo = df_nuovo.fillna("") 
     sheet.append_rows(df_nuovo.values.tolist())
 
-
-# --- INIZIALIZZAZIONE DELLA MEMORIA (CARRELLO E NAVIGAZIONE) ---
+# --- INIZIALIZZAZIONE DELLA MEMORIA ---
 if 'carrello' not in st.session_state:
     st.session_state.carrello = []
 if 'salvato_con_successo' not in st.session_state:
@@ -61,23 +59,20 @@ with tab_inserimento:
         st.session_state.salvato_con_successo = False 
 
     carrello_pieno = len(st.session_state.carrello) > 0
-
     lezioni_rimaste = 0
     ultima_data_pt = None
     data_corrente_selezionata = st.session_state.get('data_input', datetime.today().date())
 
     try:
-        df_esistente = get_data() # LEGGE DA GOOGLE SHEETS
+        df_esistente = get_data()
         if 'Lezioni_Rimaste' not in df_esistente.columns:
             df_esistente['Lezioni_Rimaste'] = 0
             
         df_pt = df_esistente[df_esistente['PT'] == 'Sì']
-        
         if not df_pt.empty:
             ultima_riga_pt = df_pt.iloc[-1]
             lezioni_rimaste_precedenti = int(ultima_riga_pt['Lezioni_Rimaste'])
             ultima_data_pt = str(ultima_riga_pt['Data'])
-            
             data_corrente_str = data_corrente_selezionata.strftime("%d/%m/%Y")
             
             if data_corrente_str == ultima_data_pt:
@@ -102,7 +97,6 @@ with tab_inserimento:
         if lezioni_rimaste > 0:
             opzioni = [f"In corso ({lezioni_rimaste} rimaste)", "10", "20", "NotDefined"]
             scelta_pacchetto = st.selectbox("📦 Stato Pacchetto PT", opzioni, disabled=carrello_pieno)
-            
             if scelta_pacchetto.startswith("In corso"):
                 lezioni_da_salvare = lezioni_rimaste
             elif scelta_pacchetto in ["10", "20"]:
@@ -112,7 +106,6 @@ with tab_inserimento:
         else:
             opzioni = ["NotDefined", "10", "20"]
             scelta_pacchetto = st.selectbox("📦 Nuovo Pacchetto (⚠️ LEZIONI ESAURITE)", opzioni, disabled=carrello_pieno)
-            
             if scelta_pacchetto in ["10", "20"]:
                 lezioni_da_salvare = int(scelta_pacchetto)
             else:
@@ -322,17 +315,16 @@ with tab_inserimento:
 # SCHEDA 2: DIARIO ALLENAMENTI
 # ==========================================
 with tab_diario:
-    
     try:
-        df_diario = get_data() # LEGGE DA GOOGLE SHEETS
+        df_diario = get_data()
         if df_diario.empty:
             st.info("Nessun allenamento trovato. Inizia ad inserire i dati!")
         else:
-            # 1. SALVIAMO L'ID ORIGINALE PRIMA DI FARE QUALSIASI COSA
             df_diario['ID_Riga'] = df_diario.index
             
-            df_diario['Carico_kg'] = pd.to_numeric(df_diario['Carico_kg'], errors='coerce').fillna(0)
-            df_diario['Rep_Target'] = pd.to_numeric(df_diario['Rep_Target'], errors='coerce').fillna(0)
+            # MAGIA ANTI-VIRGOLA: Sostituiamo le virgole con i punti prima della conversione numerica!
+            df_diario['Carico_kg'] = pd.to_numeric(df_diario['Carico_kg'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
+            df_diario['Rep_Target'] = pd.to_numeric(df_diario['Rep_Target'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
             df_diario['Data_Ord'] = pd.to_datetime(df_diario['Data'], format='%d/%m/%Y')
             
             st.markdown("### 📚 Il tuo Storico Allenamenti")
@@ -353,25 +345,21 @@ with tab_diario:
                 end_d = start_d + pd.DateOffset(months=1) - pd.Timedelta(days=1)
                 if offset == 0: end_d = oggi_pd 
                 label_periodo = f"{mesi_it[start_d.month]} {start_d.year}"
-            
             elif periodo == "3M":
                 start_d = (oggi_pd.replace(day=1) - pd.DateOffset(months=2)) + pd.DateOffset(months=offset*3)
                 end_d = start_d + pd.DateOffset(months=3) - pd.Timedelta(days=1)
                 if offset == 0: end_d = oggi_pd
                 label_periodo = f"{mesi_it[start_d.month]} {start_d.year} - {mesi_it[end_d.month]} {end_d.year}"
-            
             elif periodo == "6M":
                 start_d = (oggi_pd.replace(day=1) - pd.DateOffset(months=5)) + pd.DateOffset(months=offset*6)
                 end_d = start_d + pd.DateOffset(months=6) - pd.Timedelta(days=1)
                 if offset == 0: end_d = oggi_pd
                 label_periodo = f"{mesi_it[start_d.month]} {start_d.year} - {mesi_it[end_d.month]} {end_d.year}"
-                
             elif periodo == "1A":
                 start_d = oggi_pd.replace(month=1, day=1) + pd.DateOffset(years=offset)
                 end_d = start_d.replace(month=12, day=31)
                 if offset == 0: end_d = oggi_pd
                 label_periodo = f"Anno {start_d.year}"
-                
             else: 
                 start_d = pd.to_datetime("2000-01-01")
                 end_d = oggi_pd
@@ -430,7 +418,7 @@ with tab_diario:
                     max_kg_idx = df_zavorre['Carico_kg'].idxmax()
                     max_kg = df_zavorre.loc[max_kg_idx, 'Carico_kg']
                     max_kg_ex = df_zavorre.loc[max_kg_idx, 'Esercizio']
-                    str_kg = f"{int(max_kg)}" if max_kg % 1 == 0 else f"{max_kg}"
+                    str_kg = f"{max_kg:g}" # Format pulito per i decimali
                     col_c2.metric("⚖️ Picco di Forza", f"+{str_kg} kg", f"Esercizio: {max_kg_ex}")
                 else:
                     col_c2.metric("⚖️ Picco di Forza", "Corpo Libero", "Nessuna zavorra")
@@ -440,7 +428,7 @@ with tab_diario:
                     max_rep = int(df_zavorre.loc[max_rep_idx, 'Rep_Target'])
                     max_rep_ex = df_zavorre.loc[max_rep_idx, 'Esercizio']
                     max_rep_load = df_zavorre.loc[max_rep_idx, 'Carico_kg']
-                    str_rl = f"{int(max_rep_load)}" if max_rep_load % 1 == 0 else f"{max_rep_load}"
+                    str_rl = f"{max_rep_load:g}"
                     col_c3.metric("🔥 Resistenza Ponderata", f"{max_rep} reps", f"su {max_rep_ex} (+{str_rl}kg)")
                 else:
                     col_c3.metric("🔥 Resistenza Ponderata", "-", "Nessuna zavorra")
@@ -448,10 +436,7 @@ with tab_diario:
                 st.markdown("---")
                 st.markdown("##### 📝 Dettaglio Sessioni")
                 
-                # DOPPIO ORDINAMENTO: Giorni Nuovi in alto, ma Esercizi in ordine cronologico (dal primo inserito all'ultimo)
                 df_periodo = df_periodo.sort_values(by=['Data_Ord', 'ID_Riga'], ascending=[False, True])
-                
-                # Essendo la colonna Date non più unica per l'ordine, estraiamo i giorni in modo univoco mantenendo l'ordine discendente
                 giorni_allenamento_periodo = df_periodo['Data'].drop_duplicates().tolist()
                 
                 for giorno in giorni_allenamento_periodo:
@@ -486,17 +471,17 @@ with tab_analisi:
     st.subheader("📈 Analisi Progressi")
     
     try:
-        df_analisi = get_data() # LEGGE DA GOOGLE SHEETS
+        df_analisi = get_data()
         if df_analisi.empty:
             st.info("Inizia a registrare allenamenti per sbloccare l'analisi dei dati!")
         else:
-            # SALVIAMO L'ID ORIGINALE ANCHE QUI PER SICUREZZA
             df_analisi['ID_Riga'] = df_analisi.index
             
-            df_analisi['Carico_kg'] = pd.to_numeric(df_analisi['Carico_kg'], errors='coerce').fillna(0)
-            df_analisi['Rep_Target'] = pd.to_numeric(df_analisi['Rep_Target'], errors='coerce').fillna(0)
-            df_analisi['Serie'] = pd.to_numeric(df_analisi['Serie'], errors='coerce').fillna(0)
-            df_analisi['Rest_sec'] = pd.to_numeric(df_analisi['Rest_sec'], errors='coerce').fillna(0)
+            # MAGIA ANTI-VIRGOLA APPLICATA ANCHE ALL'ANALISI
+            df_analisi['Carico_kg'] = pd.to_numeric(df_analisi['Carico_kg'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
+            df_analisi['Rep_Target'] = pd.to_numeric(df_analisi['Rep_Target'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
+            df_analisi['Serie'] = pd.to_numeric(df_analisi['Serie'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
+            df_analisi['Rest_sec'] = pd.to_numeric(df_analisi['Rest_sec'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
 
             df_analisi['Volume_Totale'] = df_analisi.apply(
                 lambda row: int(row['Rep_Target']) if row['Metodo'] == 'AMRAP' else int(row['Serie'] * row['Rep_Target']), 
@@ -504,8 +489,6 @@ with tab_analisi:
             )
 
             df_analisi['Data_Ord'] = pd.to_datetime(df_analisi['Data'], format='%d/%m/%Y')
-            
-            # Doppio ordinamento: Data crescente per i grafici temporali, e a parità di data ordine di inserimento
             df_analisi = df_analisi.sort_values(by=['Data_Ord', 'ID_Riga'], ascending=[True, True])
 
             min_date = df_analisi['Data_Ord'].min().date()
@@ -608,7 +591,7 @@ with tab_analisi:
                         if c == 0:
                             opzioni_carichi.append("Corpo Libero (0 kg)")
                         else:
-                            str_c = f"{int(c)}" if c % 1 == 0 else f"{c}"
+                            str_c = f"{c:g}" # Format pulito
                             opzioni_carichi.append(f"{str_c} kg")
                             
                     carico_selezionato = st.selectbox("⚖️ Filtra per Zavorra:", opzioni_carichi)
