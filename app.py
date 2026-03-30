@@ -155,13 +155,18 @@ with tab_inserimento:
         with col_serie: serie_da_salvare = st.number_input("Quante Serie AMRAP?", min_value=1, value=2, step=1)
         with col_carico: carico = st.number_input("Carico (kg)", min_value=0.0, value=0.0, step=0.5) if attrezzo != "Corpo Libero" else 0.0
         
-        st.markdown("**Inserisci le ripetizioni raggiunte per ogni serie:**")
-        cols_amrap = st.columns(serie_da_salvare)
-        for i in range(serie_da_salvare):
-            with cols_amrap[i]:
-                rep_raggiunta = st.number_input(f"S. {i+1}", min_value=0, value=0, step=1, key=f"amrap_{i}")
-                rep_amrap_list.append(str(rep_raggiunta))
-        rep_da_salvare = sum(int(r) for r in rep_amrap_list)
+        conta_reps = st.checkbox("🔢 Conta le ripetizioni (disattiva se vai a cedimento senza contare)", value=True)
+        
+        if conta_reps:
+            st.markdown("**Inserisci le ripetizioni raggiunte per ogni serie:**")
+            cols_amrap = st.columns(serie_da_salvare)
+            for i in range(serie_da_salvare):
+                with cols_amrap[i]:
+                    rep_raggiunta = st.number_input(f"S. {i+1}", min_value=0, value=0, step=1, key=f"amrap_{i}")
+                    rep_amrap_list.append(str(rep_raggiunta))
+            rep_da_salvare = sum(int(r) for r in rep_amrap_list)
+        else:
+            rep_da_salvare = "" # Valore vuoto (diverso da zero!) per non distruggere le statistiche
 
     else:
         col6, col7, col8 = st.columns(3)
@@ -218,7 +223,10 @@ with tab_inserimento:
                 else: prefisso = f"{prefisso_emom} {int(emom_rep)} rep ogni {str_ogni}"
                     
             elif metodo == "AMRAP":
-                prefisso = f"AMRAP {esercizio} {int(serie_da_salvare)} Serie ({'-'.join(rep_amrap_list)})"
+                if rep_da_salvare == "":
+                    prefisso = f"AMRAP {esercizio} {int(serie_da_salvare)} Serie (A sfinimento)"
+                else:
+                    prefisso = f"AMRAP {esercizio} {int(serie_da_salvare)} Serie ({'-'.join(rep_amrap_list)})"
             else:
                 if metodo == "Normale": prefisso = f"{esercizio} {int(serie_da_salvare)} X {int(rep_da_salvare)}"
                 else: prefisso = f"{metodo} {esercizio} {int(serie_da_salvare)} X {int(rep_da_salvare)}"
@@ -322,9 +330,10 @@ with tab_diario:
         else:
             df_diario['ID_Riga'] = df_diario.index
             
-            # MAGIA ANTI-VIRGOLA: Sostituiamo le virgole con i punti prima della conversione numerica!
             df_diario['Carico_kg'] = pd.to_numeric(df_diario['Carico_kg'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
-            df_diario['Rep_Target'] = pd.to_numeric(df_diario['Rep_Target'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
+            
+            # ATTENZIONE: Niente ".fillna(0)" qui! Se il campo è vuoto, rimarrà un NaN innocuo e saggio.
+            df_diario['Rep_Target'] = pd.to_numeric(df_diario['Rep_Target'].astype(str).str.replace(',', '.'), errors='coerce')
             df_diario['Data_Ord'] = pd.to_datetime(df_diario['Data'], format='%d/%m/%Y')
             
             st.markdown("### 📚 Il tuo Storico Allenamenti")
@@ -418,20 +427,22 @@ with tab_diario:
                     max_kg_idx = df_zavorre['Carico_kg'].idxmax()
                     max_kg = df_zavorre.loc[max_kg_idx, 'Carico_kg']
                     max_kg_ex = df_zavorre.loc[max_kg_idx, 'Esercizio']
-                    str_kg = f"{max_kg:g}" # Format pulito per i decimali
+                    str_kg = f"{max_kg:g}" 
                     col_c2.metric("⚖️ Picco di Forza", f"+{str_kg} kg", f"Esercizio: {max_kg_ex}")
                 else:
                     col_c2.metric("⚖️ Picco di Forza", "Corpo Libero", "Nessuna zavorra")
 
-                if not df_zavorre.empty:
-                    max_rep_idx = df_zavorre['Rep_Target'].idxmax()
-                    max_rep = int(df_zavorre.loc[max_rep_idx, 'Rep_Target'])
-                    max_rep_ex = df_zavorre.loc[max_rep_idx, 'Esercizio']
-                    max_rep_load = df_zavorre.loc[max_rep_idx, 'Carico_kg']
+                # Sicurezza: Eliminiamo eventuali righe "NaN" per trovare il vero record numerico
+                df_zavorre_reps = df_zavorre.dropna(subset=['Rep_Target'])
+                if not df_zavorre_reps.empty:
+                    max_rep_idx = df_zavorre_reps['Rep_Target'].idxmax()
+                    max_rep = int(df_zavorre_reps.loc[max_rep_idx, 'Rep_Target'])
+                    max_rep_ex = df_zavorre_reps.loc[max_rep_idx, 'Esercizio']
+                    max_rep_load = df_zavorre_reps.loc[max_rep_idx, 'Carico_kg']
                     str_rl = f"{max_rep_load:g}"
                     col_c3.metric("🔥 Resistenza Ponderata", f"{max_rep} reps", f"su {max_rep_ex} (+{str_rl}kg)")
                 else:
-                    col_c3.metric("🔥 Resistenza Ponderata", "-", "Nessuna zavorra")
+                    col_c3.metric("🔥 Resistenza Ponderata", "-", "Nessuna rep registrata")
 
                 st.markdown("---")
                 st.markdown("##### 📝 Dettaglio Sessioni")
@@ -477,14 +488,16 @@ with tab_analisi:
         else:
             df_analisi['ID_Riga'] = df_analisi.index
             
-            # MAGIA ANTI-VIRGOLA APPLICATA ANCHE ALL'ANALISI
             df_analisi['Carico_kg'] = pd.to_numeric(df_analisi['Carico_kg'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
-            df_analisi['Rep_Target'] = pd.to_numeric(df_analisi['Rep_Target'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
             df_analisi['Serie'] = pd.to_numeric(df_analisi['Serie'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
             df_analisi['Rest_sec'] = pd.to_numeric(df_analisi['Rest_sec'].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
+            
+            # Qui non forziamo lo zero (per la regola ASMAP/cedimento invisibile)
+            df_analisi['Rep_Target'] = pd.to_numeric(df_analisi['Rep_Target'].astype(str).str.replace(',', '.'), errors='coerce')
 
+            # Calcolo Volume Totale Sicuro e pulito
             df_analisi['Volume_Totale'] = df_analisi.apply(
-                lambda row: int(row['Rep_Target']) if row['Metodo'] == 'AMRAP' else int(row['Serie'] * row['Rep_Target']), 
+                lambda row: row['Rep_Target'] if row['Metodo'] == 'AMRAP' else (row['Serie'] * row['Rep_Target']), 
                 axis=1
             )
 
@@ -523,6 +536,7 @@ with tab_analisi:
                 
             with col_bar:
                 st.markdown("**Top 10 Esercizi per Volume (Ripetizioni Totali)**")
+                # Pandas somma tranquillamente saltando i NaN, quindi l'ASMAP non rompe niente!
                 volume_esercizi = df_filtrato_date.groupby('Esercizio')['Volume_Totale'].sum().reset_index()
                 top_esercizi = volume_esercizi.sort_values(by='Volume_Totale', ascending=False).head(10)
                 
@@ -591,7 +605,7 @@ with tab_analisi:
                         if c == 0:
                             opzioni_carichi.append("Corpo Libero (0 kg)")
                         else:
-                            str_c = f"{c:g}" # Format pulito
+                            str_c = f"{c:g}" 
                             opzioni_carichi.append(f"{str_c} kg")
                             
                     carico_selezionato = st.selectbox("⚖️ Filtra per Zavorra:", opzioni_carichi)
